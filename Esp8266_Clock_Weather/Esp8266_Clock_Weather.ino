@@ -4,7 +4,7 @@
 
 #include <DNSServer.h>//密码直连将其三个库注释
 #include <ESP8266WebServer.h>
-#include <CustomWiFiManager.h>
+#include <WiFiManager.h>
 
 #include <time.h>                       
 #include <sys/time.h>                  
@@ -21,6 +21,7 @@
 
 #include <TimeLib.h>
 #include <WiFiUdp.h>
+#include <EEPROM.h>
 static const char ntpServerName[] = "time.apple.com";
 const int timeZone = 8;     // Central European Time
 WiFiUDP Udp;
@@ -35,10 +36,10 @@ const char* WIFI_SSID = "Asterfusion";  //填写你的WIFI名称及密码
 const char* WIFI_PWD = "aster@xian";
 
 const char* BILIBILIID = "34386755";  //填写你的B站账号
-
+char citycode[12] = "";
 //由于太多人使用我的秘钥，导致获取次数超额，所以不提供秘钥了，大家可以到https://dev.heweather.com/获取免费的
 const char* HEFENG_KEY = "8ec1c970417847728282a2e835c69e6d";//填写你的和风天气秘钥
-const char* HEFENG_LOCATION = "CN101110108";//填写你的城市ID,可到https://where.heweather.com/index.html查询
+char* HEFENG_LOCATION = "";
 //const char* HEFENG_LOCATION = "auto_ip";//自动IP定位
 
 #define TZ              8      // 中国时区为8
@@ -55,9 +56,6 @@ const int SDC_PIN = 0;  //
 
 const String WDAY_NAMES[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat","Sun"};  //星期
 const String MONTH_NAMES[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};  //月份
-
-// web配网页面自定义我的图标请随便使用一个图片转base64工具转换https://tool.css-js.com/base64.html, 64*64
-const char Icon[] PROGMEM = "data:image/png;base64,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";
 
 /***************************
    End Settings
@@ -106,8 +104,6 @@ int numberOfOverlays = 1;  //覆盖数
 void setup() {
   Serial.begin(115200);
   Serial.println();
-  Serial.println();
-
   // 屏幕初始化
   display.init();
   display.clear();
@@ -118,7 +114,11 @@ void setup() {
 
   //Web配网，密码直连请注释
  webconnect();
-  
+ delay(3);
+ eepromRead();
+ HEFENG_LOCATION  = citycode;//填写你的城市ID,可到https://where.heweather.com/index.html查询
+ Serial.print("city code:");
+ Serial.println(HEFENG_LOCATION);
   // 用固定密码连接，Web配网请注释
   // wificonnect();
 
@@ -230,25 +230,28 @@ void loop() {
 //   delay(500);
 // }
 
-void webconnect() {  ////Web配网，密码直连将其注释
- display.clear();
- display.drawXbm(0, 0, 128, 64, bilibili); //显示哔哩哔哩
- display.display();
+void webconnect(){
+    //add user defined parmas here,city code 11 bytes
+    WiFiManagerParameter custom_apikey("citycode", "城市代码，请到https://where.heweather.com/index.html查询", "CNxxxxxxxxx", 12);
 
- WiFiManager wifiManager;  //实例化WiFiManager
- wifiManager.setDebugOutput(false); //关闭Debug
- //wifiManager.setConnectTimeout(10); //设置超时
- wifiManager.setHeadImgBase64(FPSTR(Icon)); //设置图标
- wifiManager.setPageTitle("欢迎来到FOXING的WiFi配置页");  //设置页标题
+    WiFiManager wm;
+    WiFi.mode(WIFI_STA); 
+    bool res;
+    wm.addParameter(&custom_apikey);
+    res = wm.autoConnect("天气站"); // password protected ap
 
- if (!wifiManager.autoConnect("FOXING-IOT-Display")) {  //AP模式
-   Serial.println("连接失败并超时");
-   //重新设置并再试一次，或者让它进入深度睡眠状态
-   ESP.restart();
-   delay(1000);
- }
- Serial.println("connected...^_^");
- yield();
+    if(!res) {
+        Serial.println("Failed to connect");
+        ESP.restart();
+    } 
+    else {
+        //once connected  
+        Serial.println("connected...yeey :)");
+        strcpy(citycode, custom_apikey.getValue());
+        Serial.print("Get from webserver citycode:");
+        Serial.println(citycode);
+        eepromWrite();
+    }
 }
 
 void drawProgress(OLEDDisplay *display, int percentage, String label) {    //绘制进度
@@ -412,3 +415,39 @@ void sendNTPpacket(IPAddress &address)
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
 }
+
+void eepromWrite()
+{
+  int addr = 0;
+  Serial.println("Start write:");
+  EEPROM.begin(12);
+  if(strncmp(citycode+2,"x",1) != 0 ){
+    for(addr = 0; addr<12; addr++)
+    {
+      EEPROM.write(addr, citycode[addr]); //写数据
+      Serial.print(citycode[addr]);
+      delay(2);
+    }    
+  }
+  EEPROM.end(); //保存更改的数据
+  Serial.println("End write");
+}
+
+void eepromRead()
+{
+  int addr = 0;
+  Serial.println("Start read:");
+  EEPROM.begin(100);
+  if(strncmp(citycode+2,"x",1) == 0){
+    for(addr = 0; addr<12; addr++)
+    {
+      citycode[addr]= EEPROM.read(addr); //读数据
+      Serial.print(citycode[addr]);
+      delay(2);
+    }
+  } 
+  //释放内存
+  EEPROM.end();
+  Serial.println("End read");
+}
+
